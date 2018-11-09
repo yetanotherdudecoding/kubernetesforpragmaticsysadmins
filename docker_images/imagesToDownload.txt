@@ -1,0 +1,11 @@
+alpine_linux
+alpine_nfs
+docker_registry
+docker_web_registry
+k8s_dashboard
+k8s_dnskube
+k8s_dnsmasq
+k8s_dnssidecar
+k8s_heapster
+k8s_pause
+k8s_tiller
