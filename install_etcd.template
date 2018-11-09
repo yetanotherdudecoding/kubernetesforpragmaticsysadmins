@@ -1,0 +1,11 @@
+#!/bin/bash
+#Install etcd
+echo "export ETCDCTL_API=2" >> ~/.profile #Important, otherwise flanneld will be unable to retrieve keys from v3 namespace
+cd ROOT_SETUP_DIR_STUB/k8s
+tar -xzvf etcd-v3.3.8-linux-amd64.tar.gz -C ROOT_SETUP_DIR_STUB/k8s/
+cd etcd-v3.3.8-linux-amd64
+chmod +x etcd*
+cp ./{etcd,etcdctl} ROOT_SETUP_DIR_STUB/kubernetes/bin
+sudo systemctl enable etcd
+sudo systemctl start etcd
+systemctl status etcd -l

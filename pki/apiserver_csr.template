@@ -1,0 +1,38 @@
+[ req ]
+default_bits = 2048
+prompt = no
+default_md = sha256
+req_extensions = req_ext
+distinguished_name = dn
+
+[ dn ]
+C = US
+ST = NY
+L = MALTA
+O = GF
+OU = CIM
+CN = A_MASTER_STUB
+
+[ req_ext ]
+subjectAltName = @alt_names
+
+[ alt_names ]
+DNS.1 = kubernetes
+DNS.2 = kubernetes.default
+DNS.3 = kubernetes.default.svc
+DNS.4 = kubernetes.default.svc.cluster
+DNS.5 = kubernetes.default.svc.cluster.local
+DNS.6 = CLUSTER_HOSTNAME_1_STUB
+DNS.7 = CLUSTER_HOSTNAME_2_STUB
+DNS.8 = CLUSTER_HOSTNAME_3_STUB
+IP.1 = CLUSTER_IP_1_STUB
+IP.2 = CLUSTER_IP_2_STUB
+IP.3 = CLUSTER_IP_3_STUB
+IP.5 = CLUSTER_API_SERVER_IP_STUB
+
+[ v3_ext ]
+authorityKeyIdentifier=keyid,issuer:always
+basicConstraints=CA:FALSE
+keyUsage=keyEncipherment,dataEncipherment
+extendedKeyUsage=serverAuth,clientAuth
+subjectAltName=@alt_names

@@ -1,0 +1,14 @@
+#This script loads images into the local docker reigstry, retags them, then pushes them to a destination registry for consumption by the cluster
+#!/bin/bash
+for image in $(ls ROOT_SETUP_DIR_STUB/k8s/docker_images/*); do
+	docker load < $image
+	echo "Loaded $image"
+done
+
+for val in $(docker images --format {{.Repository}}:{{.Tag}} | grep sandbox1); do
+	docker tag $val $(echo $val | sed 's/sandbox1/DOCKER_REG_STUB/g')
+done
+
+for val in $(docker images --format {{.Repository}}:{{.Tag}} | grep DOCKER_REG_STUB ); do
+	docker push $val
+done

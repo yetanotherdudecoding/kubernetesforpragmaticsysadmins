@@ -1,0 +1,370 @@
+# Things to decide before you start - 
+# - Cluster CIDR and Service CIDR - impacts kubelet DNS parameter and kube-dns configuration 
+# - What nodes you will have
+# Start a registry somewhere - assuming sandbox1
+mkdir -p ROOT_SETUP_DIR_STUB/kubernetes/config/{flanneld,etcd,k8s}
+mkdir -p ROOT_SETUP_DIR_STUB/kubernetes/bin
+mkdir -p ROOT_SETUP_DIR_STUB/kubernetes/rundata/{etcd,kubelet}
+mkdir -p ROOT_SETUP_DIR_STUB/kubernetes/config/pki
+mkdir -p ~/k8s/deployments/system
+mkdir -p ~/k8s/deployments/apps
+
+##############################----------------------
+cat << EOF | sudo /usr/bin/tee /etc/systemd/system/flannel.service
+[Unit]
+After=network-online.target
+Wants=network-online.target
+Description=flannel is an etcd backed overlay network for containers
+
+[Service]
+Type=notify
+EnvironmentFile=KUBERNETES_HOME_STUB/config/flanneld/flanneld.conf
+ExecStart=KUBERNETES_HOME_STUB/bin/flanneld --etcd-endpoints=\${FLANNEL_ETCD_ENDPOINTS} --etcd-prefix=\${FLANNEL_ETCD_PREFIX} -v=0
+ExecStartPost=KUBERNETES_HOME_STUB/config/flanneld/mk-docker-opts.sh -d /run/flannel_docker_opts.env -i
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+##############################----------------------
+cat > KUBERNETES_HOME_STUB/config/flanneld/flanneld.conf <<EOF
+# Flanneld configuration options
+
+# etcd url location.  Point this to the server where etcd runs
+FLANNEL_ETCD_ENDPOINTS="FLANNEL_ETCD_ENDPOINTS_STUB"
+
+# etcd config key.  This is the configuration key that flannel queries
+# For address range assignment
+FLANNEL_ETCD_PREFIX="FLANNEL_ETCD_PREFIX_STUB"
+
+EOF
+
+##############################----------------------
+cat << EOF | sudo /usr/bin/tee /etc/systemd/system/docker.service
+[Unit]
+Description=Docker Application Container Engine
+Documentation=https://docs.docker.com
+After=network-online.target docker.socket
+Wants=network-online.target
+Requires=docker.socket
+
+[Service]
+Type=notify
+##For usage when flanneld is configured properly
+EnvironmentFile=/var/run/flannel/subnet.env
+ExecStart=/bin/bash -c 'PATH=KUBERNETES_HOME_STUB/bin:\$PATH;export PATH; exec /local/kubernetes/bin/dockerd -g /local/docker-data-root --bip=\${FLANNEL_SUBNET} --mtu=\${FLANNEL_MTU} --insecure-registry INSECURE_REGISTRY_STUB  -H fd://'
+ExecReload=/bin/kill -s HUP \$MAINPID
+LimitNOFILE=1048576
+LimitNPROC=infinity
+LimitCORE=infinity
+TimeoutStartSec=0
+Delegate=yes
+KillMode=process
+
+Restart=on-failure
+StartLimitBurst=3
+StartLimitInterval=60s
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+##############################----------------------
+cat << EOF | sudo /usr/bin/tee /etc/systemd/system/docker.socket
+[Unit]
+Description=Docker Socket for the API
+PartOf=docker.service
+
+[Socket]
+ListenStream=/var/run/docker.sock
+SocketMode=0660
+SocketUser=root
+SocketGroup=docker
+
+[Install]
+WantedBy=sockets.target
+EOF
+
+##############################----------------------
+cat > KUBERNETES_HOME_STUB/config/k8s/kubelet <<EOF
+###
+# kubernetes kubelet (minion) config
+
+# The address for the info server to serve on (set to 0.0.0.0 or "" for all interfaces)
+KUBELET_ADDRESS="--address=0.0.0.0"
+
+# Edit the kubelet.kubeconfig to have correct cluster server address
+KUBELET_KUBECONFIG=KUBERNETES_HOME_STUB/config/kubelet.kubeconfig
+
+# Add your own!
+KUBELET_ARGS="--cgroup-driver=cgroupfs --fail-swap-on=true --kubeconfig=KUBERNETES_HOME_STUB/config/k8s/master-kubeconfig.yaml --pod-infra-container-image DOCKER_REG_STUB:5000/pause-amd64:3.1 --cluster-domain=cluster.local --cluster-dns=CLUSTER_DNS_IP_STUB"
+EOF
+
+##############################----------------------
+cat << EOF | sudo /usr/bin/tee /etc/systemd/system/kubelet.service
+[Unit]
+Description=Kubernetes Kubelet Server
+Documentation=https://kubernetes.io/docs/concepts/overview/components/#kubelet https://kubernetes.io/docs/reference/generated/kubelet/
+After=docker.service
+Requires=docker.service
+
+[Service]
+WorkingDirectory=KUBERNETES_HOME_STUB/rundata/kubelet
+EnvironmentFile=-KUBERNETES_HOME_STUB/config/k8s/config
+EnvironmentFile=-KUBERNETES_HOME_STUB/config/k8s/kubelet
+ExecStart=KUBERNETES_HOME_STUB/bin/kubelet \
+            \$KUBE_LOGTOSTDERR \
+            \$KUBE_LOG_LEVEL \
+            \$KUBELET_KUBECONFIG \
+            \$KUBELET_ADDRESS \
+            \$KUBELET_PORT \
+            \$KUBELET_HOSTNAME \
+            \$KUBE_ALLOW_PRIV \
+            \$KUBELET_ARGS
+Restart=on-failure
+KillMode=process
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+##############################----------------------
+cat << EOF | sudo /usr/bin/tee /etc/systemd/system/kube-proxy.service
+[Unit]
+Description=Kubernetes Kube-Proxy Server
+Documentation=https://kubernetes.io/docs/concepts/overview/components/#kube-proxy https://kubernetes.io/docs/reference/generated/kube-proxy/
+After=network.target
+
+[Service]
+EnvironmentFile=-KUBERNETES_HOME_STUB/config/k8s/config
+EnvironmentFile=-KUBERNETES_HOME_STUB/config/k8s/proxy
+ExecStart=KUBERNETES_HOME_STUB/bin/kube-proxy \
+            \$KUBE_LOGTOSTDERR \
+            \$KUBE_LOG_LEVEL \
+            \$KUBE_MASTER \
+            \$KUBE_PROXY_ARGS
+Restart=on-failure
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+##############################----------------------
+cat > KUBERNETES_HOME_STUB/config/k8s/proxy <<EOF 
+###
+# kubernetes proxy config
+
+# default config should be adequate
+
+# Add your own!
+KUBE_PROXY_ARGS=""
+EOF
+
+##############################----------------------
+cat << EOF | sudo /usr/bin/tee /etc/systemd/system/kube-apiserver.service
+[Unit]
+Description=Kubernetes API Server
+Documentation=https://kubernetes.io/docs/concepts/overview/components/#kube-apiserver https://kubernetes.io/docs/reference/generated/kube-apiserver/
+After=network.target
+After=etcd.service
+
+[Service]
+EnvironmentFile=-KUBERNETES_HOME_STUB/config/k8s/config
+EnvironmentFile=-KUBERNETES_HOME_STUB/config/k8s/apiserver
+User=SERVICE_RUN_USER_STUB
+ExecStart=KUBERNETES_HOME_STUB/bin/kube-apiserver \
+            \$KUBE_LOGTOSTDERR \
+            \$KUBE_LOG_LEVEL \
+            \$KUBE_ETCD_SERVERS \
+            \$KUBE_API_ADDRESS \
+            \$KUBE_API_PORT \
+            \$KUBELET_PORT \
+            \$KUBE_ALLOW_PRIV \
+            \$KUBE_SERVICE_ADDRESSES \
+            \$KUBE_ADMISSION_CONTROL \
+            \$KUBE_API_ARGS
+Restart=on-failure
+Type=notify
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+##############################----------------------
+cat > KUBERNETES_HOME_STUB/config/k8s/apiserver <<EOF
+# The address on the local server to listen to.
+KUBE_API_ADDRESS="--insecure-bind-address=0.0.0.0"
+
+# The port on the local server to listen on.
+KUBE_API_PORT="--port=8080"
+
+# Port minions listen on
+# KUBELET_PORT="--kubelet-port=10250"
+
+# Comma separated list of nodes in the etcd cluster
+KUBE_ETCD_SERVERS="--etcd-servers=KUBE_ETCD_SERVERS_STUB"
+
+# Address range to use for services
+KUBE_SERVICE_ADDRESSES="--service-cluster-ip-range=SERVICE_CLUSTER_IP_RANGE_STUB"
+
+# default admission control policies
+KUBE_ADMISSION_CONTROL="--admission-control=NamespaceLifecycle,LimitRanger,SecurityContextDeny,ServiceAccount,ResourceQuota"
+
+KUBE_API_ARGS="--service-account-key-file=KUBERNETES_HOME_STUB/config/pki/sa.key --tls-cert-file=KUBERNETES_HOME_STUB/config/pki/apiserver.crt --tls-private-key-file=KUBERNETES_HOME_STUB/config/pki/apiserver.key"
+EOF
+
+##############################----------------------
+cat > KUBERNETES_HOME_STUB/config/etcd/etcd.conf <<EOF
+TOKEN=fobigly01
+CLUSTER_STATE=new
+NAME_1=CLUSTER_HOSTNAME_1_STUB
+NAME_2=CLUSTER_HOSTNAME_2_STUB
+NAME_3=CLUSTER_HOSTNAME_3_STUB
+HOST_1=CLUSTER_IP_1_STUB
+HOST_2=CLUSTER_IP_2_STUB
+HOST_3=CLUSTER_IP_3_STUB
+CLUSTER=\${NAME_1}=http://\${HOST_1}:2380,\${NAME_2}=http://\${HOST_2}:2380,\${NAME_3}=http://\${HOST_3}:2380
+
+THIS_NAME=\${NAME_1}
+THIS_IP=\${HOST_1}
+
+ETCD_DATA_DIR="ETCD_DATA_DIR_STUB"
+ETCD_LISTEN_PEER_URLS="http://0.0.0.0:2380"
+ETCD_LISTEN_CLIENT_URLS="http://0.0.0.0:2379"
+ETCD_NAME="default"
+ETCD_INITIAL_ADVERTISE_PEER_URLS="http://0.0.0.0:2380"
+ETCD_ADVERTISE_CLIENT_URLS="http://0.0.0.0:2379"
+ETCD_INITIAL_CLUSTER=\$CLUSTER
+ETCD_INITIAL_CLUSTER_TOKEN=\$TOKEN
+ETCD_INITIAL_CLUSTER_STATE=\$CLUSTER_STATE
+ETCD_ENABLE_V2="true"
+#ETCD_FORCE_NEW_CLUSTER="true"
+EOF
+
+##############################----------------------
+cat << EOF | sudo /usr/bin/tee /etc/systemd/system/etcd.service
+[Unit]
+Description=Etcd Server
+After=network.target
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=notify
+WorkingDirectory=ETCD_DATA_DIR_STUB
+EnvironmentFile=-KUBERNETES_HOME_STUB/config/etcd/etcd.conf
+User=SERVICE_RUN_USER_STUB
+# set GOMAXPROCS to number of processors
+ExecStart=/bin/bash -c "GOMAXPROCS=\$(nproc) KUBERNETES_HOME_STUB/bin/etcd --name=\"\${THIS_NAME}\" --data-dir=\"\${ETCD_DATA_DIR}\" --listen-client-urls=\"\${ETCD_LISTEN_CLIENT_URLS}\" \
+        --initial-advertise-peer-urls http://\${THIS_IP}:2380 --listen-peer-urls http://\${THIS_IP}:2380 \
+        --advertise-client-urls http://\${THIS_IP}:2379  \
+        --initial-cluster \${CLUSTER} \
+        --initial-cluster-state \${CLUSTER_STATE} --initial-cluster-token \${TOKEN} --enable-v2"
+Restart=on-failure
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+####################------------------------------
+cat > KUBERNETES_HOME_STUB/config/k8s/config <<EOF
+# kubernetes system config
+KUBE_LOGTOSTDERR="--logtostderr=true"
+
+# journal message level, 0 is debug
+KUBE_LOG_LEVEL="--v=0"
+
+# Should this cluster be allowed to run privileged docker containers
+KUBE_ALLOW_PRIV="--allow-privileged=false"
+
+# How the controller-manager, scheduler, and proxy find the apiserver
+KUBE_MASTER="--master=http://A_MASTER_STUB:8080"
+EOF
+
+##############################----------------------
+cat << EOF | /usr/bin/tee KUBERNETES_HOME_STUB/config/k8s/master-kubeconfig.yaml
+kind: Config
+clusters:
+- name: local
+  cluster:
+    certificate-authority: KUBERNETES_HOME_STUB/config/pki/ca.crt
+    server: http://A_MASTER_STUB:8080
+users:
+- name: kubelet
+contexts:
+- context:
+    cluster: local
+    user: kubelet
+  name: kubelet-context
+current-context: kubelet-context
+EOF
+
+##############################----------------------
+cat > KUBERNETES_HOME_STUB/config/k8s/scheduler <<EOF
+###
+# kubernetes scheduler config
+
+# default config should be adequate
+
+# Add your own!
+KUBE_SCHEDULER_ARGS=""
+EOF
+
+##############################----------------------
+cat << EOF | sudo /usr/bin/tee /etc/systemd/system/kube-scheduler.service
+[Unit]
+Description=Kubernetes Scheduler Plugin
+Documentation=https://kubernetes.io/docs/concepts/overview/components/#kube-scheduler https://kubernetes.io/docs/reference/generated/kube-scheduler/
+
+[Service]
+EnvironmentFile=-KUBERNETES_HOME_STUB/config/k8s/config
+EnvironmentFile=-KUBERNETES_HOME_STUB/config/k8s/scheduler
+User=SERVICE_RUN_USER_STUB
+ExecStart=KUBERNETES_HOME_STUB/bin/kube-scheduler \
+            \$KUBE_LOGTOSTDERR \
+            \$KUBE_LOG_LEVEL \
+            \$KUBE_MASTER \
+            \$KUBE_SCHEDULER_ARGS
+Restart=on-failure
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+##############################----------------------
+cat >KUBERNETES_HOME_STUB/config/k8s/controller-manager <<EOF
+###
+# The following values are used to configure the kubernetes controller-manager
+
+# defaults from config and apiserver should be adequate
+
+# Add your own!
+KUBE_CONTROLLER_MANAGER_ARGS="--service-account-private-key-file=KUBERNETES_HOME_STUB/config/pki/sa.key --root-ca-file=KUBERNETES_HOME_STUB/config/pki/ca.crt"
+
+EOF
+
+##############################----------------------
+cat << EOF | sudo /usr/bin/tee /etc/systemd/system/kube-controller-manager.service
+[Unit]
+Description=Kubernetes Controller Manager
+Documentation=https://kubernetes.io/docs/concepts/overview/components/#kube-controller-manager https://kubernetes.io/docs/reference/generated/kube-controller-manager/
+
+[Service]
+EnvironmentFile=-KUBERNETES_HOME_STUB/config/k8s/config
+EnvironmentFile=-KUBERNETES_HOME_STUB/config/k8s/controller-manager
+User=SERVICE_RUN_USER_STUB
+ExecStart=KUBERNETES_HOME_STUB/bin/kube-controller-manager \
+            \$KUBE_LOGTOSTDERR \
+            \$KUBE_LOG_LEVEL \
+            \$KUBE_MASTER \
+            \$KUBE_CONTROLLER_MANAGER_ARGS
+Restart=on-failure
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target
+EOF

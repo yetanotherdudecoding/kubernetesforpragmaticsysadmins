@@ -1,0 +1,83 @@
+7/19/2018
+#Generate certificates only once, and distribute to all nodes (done in pre script)
+cp -r ROOT_SETUP_DIR_STUB/k8s/pki/ ROOT_SETUP_DIR_STUB/kubernetes/config/
+
+#Install flanneld
+cd ROOT_SETUP_DIR_STUB/k8s/
+mkdir -p ROOT_SETUP_DIR_STUB/k8s/flanneld
+tar -xzvf flannel-v0.9.1-linux-amd64.tar.gz -C ROOT_SETUP_DIR_STUB/k8s/flanneld
+chmod +x ./flanneld/flanneld ./flanneld/mk-docker-opts.sh
+mkdir -p ROOT_SETUP_DIR_STUB/kubernetes/config/flanneld
+mv ./flanneld/mk-docker-opts.sh ROOT_SETUP_DIR_STUB/kubernetes/config/flanneld/
+mv ./flanneld/flanneld ROOT_SETUP_DIR_STUB/kubernetes/bin/flanneld
+
+etcdctl set FLANNEL_ETCD_PREFIX_STUB/config '{"Network": "CLUSTER_POD_CIDR_STUB","SubnetLen": 24,"Backend": {"Type": "vxlan","VNI": 1 }}'
+sudo systemctl enable flannel
+sudo systemctl start flannel
+systemctl status flannel -l
+
+#Install Docker and start - please pay attention to portion below if docker is already installed
+tar -xzvf docker-18.03.1-ce.tgz -C ROOT_SETUP_DIR_STUB/k8s/
+chmod +x docker/*
+cp docker/* ROOT_SETUP_DIR_STUB/kubernetes/bin/
+
+sudo systemctl enable docker
+sudo systemctl start docker
+systemctl status docker -l
+#You need to delete the default docker bridge if docker was already installed
+#sudo systemctl stop docker
+#iptables -t nat -F
+#sudo ip link set docker0 down
+#sudo ip link delete docker0
+#sudo sysemctl daemon-reload
+#sudo systemctl start docker
+
+#
+
+
+#Kubernetes
+
+#Install the kubelet and other binaries
+cd ROOT_SETUP_DIR_STUB/k8s/
+tar -xzvf kubernetes-v1.9.9.tar.gz
+cd ROOT_SETUP_DIR_STUB/k8s/kubernetes/server
+tar -xzvf kubernetes-server-linux-amd64.tar.gz
+cd ROOT_SETUP_DIR_STUB/k8s/kubernetes/server/kubernetes/server/bin
+cp ./{kubectl,kube-apiserver,kube-proxy,kubelet,kube-scheduler,kube-controller-manager} ROOT_SETUP_DIR_STUB/kubernetes/bin/
+chmod +x ROOT_SETUP_DIR_STUB/kubernetes/bin/{kubectl,kube-apiserver,kube-proxy,kubelet,kube-scheduler,kube-controller-manager}
+
+
+#Kubelet
+sudo systemctl enable kubelet
+sudo systemctl start kubelet
+systemctl status kubelet -l
+
+sudo systemctl enable kube-proxy
+sudo systemctl start kube-proxy
+systemctl status kube-proxy -l
+
+#kubectl
+#Setup to allow kubectl to work from this node
+mkdir -p ~/.kube/
+cp ROOT_SETUP_DIR_STUB/kubernetes/config/k8s/master-kubeconfig.yaml ~/.kube/config
+
+######################## Now you should have a functional worker node - proceed only if you wish to setup master on this node as well
+
+#Setup kube-apiserver
+sudo systemctl enable kube-apiserver
+sudo systemctl start kube-apiserver
+systemctl status kube-apiserver -l
+
+sudo systemctl enable kube-controller-manager
+sudo systemctl start kube-controller-manager
+systemctl status kube-controller-manager -l
+
+sudo systemctl enable kube-scheduler
+sudo systemctl start kube-scheduler
+systemctl status kube-scheduler -l
+
+ROOT_SETUP_DIR/kubernetes/bin/kubectl get nodes -o wide
+echo “Please add ROOT_SETUP_DIR_STUB/kubernetes/bin/ to path for $(whoami)”
+
+
+

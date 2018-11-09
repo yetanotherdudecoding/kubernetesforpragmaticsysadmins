@@ -1,0 +1,35 @@
+[Unit]
+Description=Docker Application Container Engine
+Documentation=https://docs.docker.com
+After=network-online.target docker.socket
+Wants=network-online.target
+Requires=docker.socket
+
+[Service]
+Type=notify
+##For usage when flanneld is configured properly
+EnvironmentFile=/var/run/flannel/subnet.env
+#Get around puppet limitation where it reads first interface from ifconfig to build /etc/hosts - this should get us at the bottom of the list
+Environment="BRIDGE=zzdocker0"
+ExecStartPre=/usr/sbin/brctl addbr ${BRIDGE}
+ExecStartPre=/usr/sbin/ip addr add ${FLANNEL_SUBNET} dev ${BRIDGE}
+ExecStartPre=/usr/sbin/ip link set dev $BRIDGE up
+
+#Start Docker
+ExecStart=/bin/bash -c 'PATH=/local/kubernetes/bin:$PATH;export PATH; exec /local/kubernetes/bin/dockerd -g /local/docker-data-root --insecure-registry 10.10.0.0/16  -H fd:// --bridge=${BRIDGE}'
+ExecReload=/bin/kill -s HUP $MAINPID
+LimitNOFILE=1048576
+LimitNPROC=infinity
+LimitCORE=infinity
+TimeoutStartSec=0
+Delegate=yes
+KillMode=process
+
+#Restart=on-failure
+StartLimitBurst=3
+StartLimitInterval=60s
+
+ExecStopPost=/usr/sbin/ip link set dev $BRIDGE down
+ExecStopPost=/usr/sbin/brctl delbr $BRIDGE
+[Install]
+WantedBy=multi-user.target

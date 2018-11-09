@@ -1,0 +1,6 @@
+etcd-v3.3.8-linux-amd64.tar.gz
+#flanneld-v0.10.0-linux-amd64.tar.gz #had stability issues
+flannel-v0.9.1-linux-amd64.tar.gz
+kubernetes-v1.9.9.tar.gz
+tiller and helm
+docker-18.03.1-ce.tgz
