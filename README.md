@@ -7,7 +7,7 @@ Maintained by
 
 What is it?
 ==========
-This drops you into a functional kubernetes cluster - not provisioned by kube-up.sh or kubeadm - with the kubernetes dashboard and minimal rbac modifications to support it. Kalytical, in contrast, uses kubeadm as it's a much easier and faster way to provision a cluster.
+This drops you into a functional kubernetes cluster - not provisioned by kube-up.sh or kubeadm - with the kubernetes dashboard, minimal rbac modifications to support the dashboard, and Helm. Kalytical, in contrast, uses kubeadm as it's a much easier and faster way to provision a cluster.
 
 Target audience for this project are the forgotten sysadmins sitting in an air gapped data center who literally can't find a guide that doesn't ask them to clone, pull from docker hub, or curl a package randomly from the internet during the installation or during operation.
 
